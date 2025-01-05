@@ -5,6 +5,7 @@ from oo_ctrl.np.core import (AbstractNumPyMPC,
                              AbstractNumPyModel,
                              AbstractNumPyCost,
                              AbstractActionSampler)
+from oo_ctrl.np.cost_monitor import CostMonitor
 from oo_ctrl.np.util import vec_mat_vec
 
 
@@ -18,7 +19,8 @@ class MPPI(AbstractNumPyMPC):
                  cost: Union[List[Union[Tuple[float, AbstractNumPyCost], AbstractNumPyCost]], 
                              Union[Tuple[float, AbstractNumPyCost], AbstractNumPyCost]],
                  sampler: AbstractActionSampler,
-                 biased: bool = False
+                 biased: bool = False,
+                 cost_monitor: bool = False
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
         assert isinstance(n_samples, int) and n_samples > 0, f"n_samples must be int > 0, got {n_samples}"
@@ -53,6 +55,12 @@ class MPPI(AbstractNumPyMPC):
         
         self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
         
+        self._cost_monitor = CostMonitor() if cost_monitor else None
+        
+    @property
+    def cost_monitor(self) -> Optional[CostMonitor]:
+        return self._cost_monitor
+        
     def step(self,
              current_state: np.ndarray,
              observation: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -68,11 +76,13 @@ class MPPI(AbstractNumPyMPC):
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1)
         
-        s = self._calculate_costs(x_seq, u_eps, observation) # (n_samples,)
+        s, _ = self._calculate_costs(x_seq, u_eps, observation) # (n_samples,)
         
         if not self._biased:
             cov_inv = np.linalg.inv(self._sampler.covariance_matrix)
-            s = s + (self._lambda / 2.) * vec_mat_vec(u_eps, cov_inv, u_eps).sum(axis=1)
+            # TODO: Check if we need this line (it looks like theoretically properly,
+            # but in practice works worse)
+            # s = s + (self._lambda / 2.) * vec_mat_vec(u_eps, cov_inv, u_eps).sum(axis=1)
             s = s + self._lambda * vec_mat_vec(u_eps, cov_inv, epsilon).sum(axis=1)
         
         beta = np.min(s)
@@ -87,21 +97,46 @@ class MPPI(AbstractNumPyMPC):
         
         self._u_prev[:-1] = u[1:, :].copy()
         self._u_prev[-1] = u[-1].copy()
+    
+        x_prev = current_state.copy()
+        x_seq = [x_prev]
+        for i in range(self._horizon):
+            x_prev = self._model(x_prev, u[i, :])
+            x_seq.append(x_prev)
+        x_seq = np.stack(x_seq, axis=0)
         
         info = {
-            "u_seq": u.copy()
+            "u_seq": u.copy(),
+            "x_seq": x_seq
         }
         
-        return u[0], info
+        if self._cost_monitor:
+            self._log_result_cost(x_seq, u, observation)
         
+        return u[0], info
         
     def _calculate_costs(self,
                          x: np.ndarray,
                          u: np.ndarray,
-                         observation: Optional[Dict[str, Any]]) -> np.ndarray:
+                         observation: Optional[Dict[str, Any]]) -> Tuple[np.ndarray,
+                                                                         Dict[str, np.ndarray]]:
         result = 0.
+        values_horizon = {}
         for w, cost in self._cost:
             cost_values_horizon = cost(x, u, observation)
+            values_horizon[cost.name] = cost_values_horizon
             cost_sum = np.sum(cost_values_horizon, axis=1)
             result = result + w * cost_sum
-        return result
+        return result, values_horizon
+
+    def _log_result_cost(self,
+                         x_seq: np.ndarray,
+                         u_seq: np.ndarray,
+                         observation: Optional[Dict[str, Any]]):
+        x_seq = x_seq[np.newaxis, ...]
+        u_seq = u_seq[np.newaxis, ...]
+        _, values_horizon = self._calculate_costs(x_seq, 
+                                                  u_seq,
+                                                  observation)
+        for k, v in values_horizon.items():
+            self._cost_monitor.log_cost(k, v[0, :])

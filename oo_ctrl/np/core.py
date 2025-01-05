@@ -125,33 +125,3 @@ class AbstractNumPyMPC(ABC):
              observation: Optional[Dict[str, Any]] = None,
              *args, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         pass
-
-
-# class CompositeCost(AbstractNumPyCost):
-#     """Defines a linear combination of the N cost functions.
-
-#     Given N cost functions C_1(X, U), ..., C_N(x, U), where
-#     X is the state vector, U is the control vector, and N scalar weights w_1, ..., w_N, the output cost function
-#     is defined as C(X, U) = w_1 * C_1(X, U) + ... + w_N * C_N(X, U).
-#     """
-
-#     def __init__(self, costs: Union[Tuple[Tuple[AbstractNumPyCost, float], AbstractNumPyCost]]):
-#         super().__init__()
-#         for i, cost in enumerate(costs):
-#             if isinstance(cost, tuple):
-#                 assert cost[1] > 0., f"All cost weights must be > 0, got {cost[1]} for cost at {i}"
-#         self._costs = [e[0] if isinstance(e, tuple) else e for e in costs]
-#         self._weights = [e[1] if isinstance(e, tuple) else 1. for e in costs]
-
-#     def __call__(self,
-#                  state: np.ndarray,
-#                  control: np.ndarray,
-#                  observation: Dict[str, Any]) -> np.ndarray:
-#         total_cost_expression = None
-#         for cost, weight in zip(self._costs, self._weights):
-#             cost_expression = cost(state, control, observation)
-#             if total_cost_expression is not None:
-#                 total_cost_expression = total_cost_expression + weight * cost_expression
-#             else:
-#                 total_cost_expression = weight * cost_expression
-#         return total_cost_expression

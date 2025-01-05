@@ -64,6 +64,7 @@ def _control_cost_naive(controls: np.ndarray,
 
 def _euclidean_obstacles_cost_naive(x: np.ndarray,
                                     obstacles: np.ndarray,
+                                    Q: float,
                                     squared: bool,
                                     reduction: Reduction) -> np.ndarray:
     if len(obstacles.shape) == 2:
@@ -109,7 +110,7 @@ def _euclidean_obstacles_cost_naive(x: np.ndarray,
             else:
                 raise ValueError(f"Unknown reduction {reduction}")
             
-            result[i, t] = cost_value
+            result[i, t] = Q * cost_value
             
     return result
 
@@ -286,6 +287,7 @@ def test_euclidean_obstacles_cost_inverse_sum():
                                      reduction=Reduction.INVERSE_SUM)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -299,6 +301,7 @@ def test_euclidean_obstacles_cost_inverse_mean():
                                      reduction=Reduction.INVERSE_MEAN)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -312,6 +315,7 @@ def test_euclidean_obstacles_cost_sum_inverse():
                                      reduction=Reduction.SUM_INVERSE)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -325,6 +329,7 @@ def test_euclidean_obstacles_cost_mean_inverse():
                                      reduction=Reduction.MEAN_INVERSE)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -338,6 +343,7 @@ def test_euclidean_obstacles_cost_inverse_min():
                                      reduction=Reduction.INVERSE_MIN)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -350,6 +356,7 @@ def test_euclidean_obstacles_cost_inverse_sum_squared():
                                      reduction=Reduction.INVERSE_SUM)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -363,6 +370,7 @@ def test_euclidean_obstacles_cost_inverse_mean_squared():
                                      reduction=Reduction.INVERSE_MEAN)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -376,6 +384,7 @@ def test_euclidean_obstacles_cost_sum_inverse_squared():
                                      reduction=Reduction.SUM_INVERSE)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -389,6 +398,7 @@ def test_euclidean_obstacles_cost_mean_inverse_squared():
                                      reduction=Reduction.MEAN_INVERSE)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -402,6 +412,7 @@ def test_euclidean_obstacles_cost_inverse_min_squared():
                                      reduction=Reduction.INVERSE_MIN)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})
@@ -414,6 +425,7 @@ def test_euclidean_obstacles_cost_inverse_sum_static():
                                      reduction=Reduction.INVERSE_SUM)
     value_naive = _euclidean_obstacles_cost_naive(x=states,
                                                   obstacles=obstacles,
+                                                  Q=cost_fn._Q,
                                                   squared=cost_fn._squared,
                                                   reduction=cost_fn._reduction)
     value = cost_fn(states, None, {"obstacles": obstacles})

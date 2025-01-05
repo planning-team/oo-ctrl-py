@@ -47,7 +47,7 @@ class EuclideanGoalCost(AbstractNumPyCost):
                  goal_key: str = "goal",
                  name: str = "euclidean_goal"):
         super(EuclideanGoalCost, self).__init__(name=name)
-        if isinstance(Q_diag, float):
+        if isinstance(Q_diag, float) or isinstance(Q_diag, int):
             assert Q_diag > 0., f"Q must be > 0 if single value, got {Q_diag}"
             if state_dims is not None:
                 if isinstance(state_dims, int):
@@ -87,6 +87,40 @@ class EuclideanGoalCost(AbstractNumPyCost):
             result = np.sqrt(result)
         
         return result
+
+
+class EuclideanRatioGoalCost(AbstractNumPyCost):
+
+    def __init__(self,
+                 Q: float,
+                 squared: bool,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = None,
+                 goal_key: str = "goal",
+                 name: str = "euclidean_ratio_goal"):
+        super(EuclideanRatioGoalCost, self).__init__(name=name)
+        self._Q = Q
+        self._squared = squared
+        self._state_dims = state_dims
+        self._goal_key = goal_key
+
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        x = extract_dims(state, self._state_dims)  # (n_samples, H, dim)
+        g = observation[self._goal_key]  # (dim,)
+        
+        dist_all = np.linalg.norm(x - g, axis=-1)  # (n_samples, H)
+        dist_initial = dist_all[:, 0, np.newaxis] # (n_samples, 1)
+        
+        ratio = dist_all / dist_initial  # (n_samples, H)
+        if ratio.shape[1] > 1:
+            ratio[:, 0] = 0.
+            
+        if self._squared:
+            ratio = ratio ** 2
+            
+        return self._Q * ratio
 
 
 class ControlCost(AbstractNumPyCost):
@@ -170,30 +204,67 @@ class EuclideanObstaclesCost(AbstractNumPyCost):
         if self._reduction == Reduction.INVERSE_SUM:
             if self._squared:
                 distances = distances ** 2
-            return 1. / np.sum(distances, axis=1)
+            return self._Q * (1. / np.sum(distances, axis=1))
         
         if self._reduction == Reduction.INVERSE_MEAN:
             mean_distances = np.mean(distances, axis=1)
             if self._squared:
                 mean_distances = mean_distances ** 2
-            return 1. / mean_distances
+            return self._Q * (1. / mean_distances)
         
         if self._reduction == Reduction.SUM_INVERSE:
             if self._squared:
                 distances = distances ** 2
             inv_distances = 1. / distances
-            return np.sum(inv_distances, axis=1)
+            return self._Q * np.sum(inv_distances, axis=1)
 
         if self._reduction == Reduction.MEAN_INVERSE:
             mean_inv_distances = np.mean(1. / distances, axis=1)
             if self._squared:
                 mean_inv_distances = mean_inv_distances ** 2
-            return mean_inv_distances
+            return self._Q * mean_inv_distances
         
         if self._reduction == Reduction.INVERSE_MIN:
             min_distances = np.min(distances, axis=1)
             if self._squared:
                 min_distances = min_distances ** 2
-            return 1. / min_distances
+            return self._Q * (1. / min_distances)
 
         raise ValueError(f"Unknown reduction {self._reduction}")
+
+
+class CollisionIndicatorCost(AbstractNumPyCost):
+    
+    def __init__(self,
+                 Q: float,
+                 safe_distance: float,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = 2,
+                 obstacles_key: str = "obstacles",
+                 name: str = "collision_indicator"):
+        super(CollisionIndicatorCost, self).__init__(name=name)
+        self._Q = Q
+        self._safe_distance = safe_distance
+        self._state_dims = state_dims
+        self._obstacles_key = obstacles_key
+    
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        obstacles = observation[self._obstacles_key] # (n_obstacles, H, dim)
+        x = extract_dims(state, self._state_dims) # (n_samples, H, dim)
+        
+        # If obstacles don't have horizon dimension (static obstacles),
+        # just copy them along the horizon
+        if len(obstacles.shape) == 2:
+            obstacles = np.stack([obstacles for _ in range(x.shape[1])], axis=1)
+        
+        x = x[:, np.newaxis, :, :]  # (n_samples, 1, H, dim)
+        obstacles = obstacles[np.newaxis, :, :, :]  # (1, n_obstacles, H, dim)
+        diff = x - obstacles
+        distances = np.linalg.norm(diff, axis=-1)  # (n_samples, n_obstacles, H)
+
+        collisions = (distances <= self._safe_distance) # (n_samples, n_obstacles, H)
+        
+        reduced_cost = np.sum(collisions, axis=1)
+        return self._Q * reduced_cost
