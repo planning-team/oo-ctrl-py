@@ -1,11 +1,20 @@
 import numpy as np
 
 from typing import Union, Dict, Any, Tuple, Optional
+from enum import Enum
 from oo_ctrl.np.core import AbstractNumPyCost
 from oo_ctrl.np.util import extract_dims
 
 
-class EuclideanCost(AbstractNumPyCost):
+class Reduction(Enum):
+    INVERSE_SUM = "inverse_sum"
+    INVERSE_MEAN = "inverse_mean"
+    SUM_INVERSE = "sum_inverse"
+    MEAN_INVERSE = "mean_inverse"
+    INVERSE_MIN = "inverse_min"
+
+
+class EuclideanGoalCost(AbstractNumPyCost):
     r"""Calculates (weighted) Euclidean distance based cost.
     
     Given the current state :math:`x` and the goal state :math:`g`, the cost is calculated:
@@ -36,8 +45,8 @@ class EuclideanCost(AbstractNumPyCost):
                  squared: bool,
                  state_dims: Optional[Union[int, Tuple[int, ...]]] = None,
                  goal_key: str = "goal",
-                 name: str = "euclidean"):
-        super(EuclideanCost, self).__init__(name=name)
+                 name: str = "euclidean_goal"):
+        super(EuclideanGoalCost, self).__init__(name=name)
         if isinstance(Q_diag, float):
             assert Q_diag > 0., f"Q must be > 0 if single value, got {Q_diag}"
             if state_dims is not None:
@@ -121,3 +130,70 @@ class ControlCost(AbstractNumPyCost):
             result = np.einsum("...i,ii,...i->...", u, self._R, u)
         
         return result
+
+
+class EuclideanObstaclesCost(AbstractNumPyCost):
+
+    def __init__(self,
+                 Q: float,
+                 squared: bool,
+                 reduction: Union[str, Reduction],
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = 2,
+                 obstacles_key: str = "obstacles",
+                 name: str = "euclidean_obstacles"):
+        super(EuclideanObstaclesCost, self).__init__(name=name)
+        self._Q = Q
+        if isinstance(reduction, str):
+            reduction = Reduction(reduction)
+        self._reduction = reduction
+        self._squared = squared
+        self._state_dims = state_dims
+        self._obstacles_key = obstacles_key
+
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        obstacles = observation[self._obstacles_key] # (n_obstacles, H, dim)
+        x = extract_dims(state, self._state_dims) # (n_samples, H, dim)
+        
+        # If obstacles don't have horizon dimension (static obstacles),
+        # just copy them along the horizon
+        if len(obstacles.shape) == 2:
+            obstacles = np.stack([obstacles for _ in range(x.shape[1])], axis=1)
+        
+        x = x[:, np.newaxis, :, :]  # (n_samples, 1, H, dim)
+        obstacles = obstacles[np.newaxis, :, :, :]  # (1, n_obstacles, H, dim)
+        diff = x - obstacles
+        distances = np.linalg.norm(diff, axis=-1)  # (n_samples, n_obstacles, H)
+        
+        if self._reduction == Reduction.INVERSE_SUM:
+            if self._squared:
+                distances = distances ** 2
+            return 1. / np.sum(distances, axis=1)
+        
+        if self._reduction == Reduction.INVERSE_MEAN:
+            mean_distances = np.mean(distances, axis=1)
+            if self._squared:
+                mean_distances = mean_distances ** 2
+            return 1. / mean_distances
+        
+        if self._reduction == Reduction.SUM_INVERSE:
+            if self._squared:
+                distances = distances ** 2
+            inv_distances = 1. / distances
+            return np.sum(inv_distances, axis=1)
+
+        if self._reduction == Reduction.MEAN_INVERSE:
+            mean_inv_distances = np.mean(1. / distances, axis=1)
+            if self._squared:
+                mean_inv_distances = mean_inv_distances ** 2
+            return mean_inv_distances
+        
+        if self._reduction == Reduction.INVERSE_MIN:
+            min_distances = np.min(distances, axis=1)
+            if self._squared:
+                min_distances = min_distances ** 2
+            return 1. / min_distances
+
+        raise ValueError(f"Unknown reduction {self._reduction}")

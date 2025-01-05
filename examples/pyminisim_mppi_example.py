@@ -45,7 +45,7 @@ def create_controller() -> octrl.np.MPPI:
         biased=False,
         sampler=octrl.np.GaussianActionSampler(stds=(0.7, np.pi / 2)),
         cost=[
-            octrl.np.EuclideanCost(Q_diag=35.,
+            octrl.np.EuclideanGoalCost(Q_diag=35.,
                                    squared=True,
                                    state_dims=2),
             octrl.np.ControlCost(R_diag=(5., 1.))

@@ -105,5 +105,3 @@ class MPPI(AbstractNumPyMPC):
             cost_sum = np.sum(cost_values_horizon, axis=1)
             result = result + w * cost_sum
         return result
-    
-        
