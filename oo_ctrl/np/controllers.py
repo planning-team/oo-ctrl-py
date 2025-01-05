@@ -59,7 +59,7 @@ class MPPI(AbstractNumPyMPC):
         epsilon = self._sampler(n_samples=self._n_samples,
                                 horizon=self._horizon,
                                 observation=observation) # (n_samples, horizon, dim)
-        u_eps = np.tile((self._n_samples, 1, 1), self._u_prev) + epsilon # (n_samples, horizon, dim)
+        u_eps = np.tile(self._u_prev, (self._n_samples, 1, 1)) + epsilon # (n_samples, horizon, dim)
         
         x_prev = np.tile(current_state, (self._n_samples, 1))
         x_seq = [x_prev]
@@ -68,11 +68,10 @@ class MPPI(AbstractNumPyMPC):
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1)
         
-        s = self._calculate_costs(x_seq, u_eps, observation) # (n_samples, horizon)
-        s = np.sum(s, axis=1)  # (n_samples,)
+        s = self._calculate_costs(x_seq, u_eps, observation) # (n_samples,)
         
         if not self._biased:
-            cov_inv = 1. / self._sampler.covariance_matrix
+            cov_inv = np.linalg.inv(self._sampler.covariance_matrix)
             s = s + (self._lambda / 2.) * vec_mat_vec(u_eps, cov_inv, u_eps).sum(axis=1)
             s = s + self._lambda * vec_mat_vec(u_eps, cov_inv, epsilon).sum(axis=1)
         
@@ -84,6 +83,7 @@ class MPPI(AbstractNumPyMPC):
         
         delta_u = np.tensordot(w, epsilon, axes=(0, 0))
         u = self._u_prev + delta_u
+        u = self._model.clip(u)
         
         self._u_prev[:-1] = u[1:, :].copy()
         self._u_prev[-1] = u[-1].copy()
@@ -101,7 +101,9 @@ class MPPI(AbstractNumPyMPC):
                          observation: Optional[Dict[str, Any]]) -> np.ndarray:
         result = 0.
         for w, cost in self._cost:
-            result = result + w * cost(x, u, observation)
+            cost_values_horizon = cost(x, u, observation)
+            cost_sum = np.sum(cost_values_horizon, axis=1)
+            result = result + w * cost_sum
         return result
     
         

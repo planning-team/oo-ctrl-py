@@ -25,7 +25,7 @@ class GaussianActionSampler(AbstractActionSampler):
                  horizon: int,
                  observation: Optional[Dict[str, Any]]) -> np.ndarray:
         mu = np.zeros(self._sigma.shape[0])
-        return np.random.multivariate_normal(mu, self._sigma, (horizon, n_samples))
+        return np.random.multivariate_normal(mu, self._sigma, (n_samples, horizon))
 
     @property
     def covariance_matrix(self) -> np.ndarray:

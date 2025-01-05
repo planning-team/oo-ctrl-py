@@ -24,4 +24,4 @@ def vec_mat_vec(vec_l: np.ndarray,
     if mat is not None:
         return np.einsum("...i,ij,...j->...", vec_l, mat, vec_r)
     else:
-        return np.einsum("...i,...j->...", vec_l, vec_r)
+        return np.einsum("...i,...i->...", vec_l, vec_r)

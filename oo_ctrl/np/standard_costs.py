@@ -69,11 +69,11 @@ class EuclideanCost(AbstractNumPyCost):
         x = extract_dims(state, self._state_dims)
         g = observation[self._goal_key]
         
-        result = np.linalg.norm(x - g, axis=-1)
+        result = x - g
         if isinstance(self._Q, float):
-            result = self._Q * np.einsum("...i,...j->...", result, result)
+            result = self._Q * np.einsum("...i,...i->...", result, result)
         else:
-            result = np.einsum("...i,ij,...j->...", result, self._Q, result)
+            result = np.einsum("...i,ii,...i->...", result, self._Q, result)
         if not self._squared:
             result = np.sqrt(result)
         
@@ -116,8 +116,8 @@ class ControlCost(AbstractNumPyCost):
         u = extract_dims(control, self._control_dims)
         
         if isinstance(self._R, float):
-            result = self._R * np.einsum("...i,...j->...", u, u)
+            result = self._R * np.einsum("...i,...i->...", u, u)
         else:
-            result = np.einsum("...i,ij,...j->...", u, self._R, u)
+            result = np.einsum("...i,ii,...i->...", u, self._R, u)
         
         return result
