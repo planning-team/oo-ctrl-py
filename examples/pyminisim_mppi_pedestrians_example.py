@@ -207,7 +207,7 @@ def single_run():
 def main():
     random.seed(SEED)
     np.random.seed(SEED)
-    for _ in range(10):
+    for _ in range(AMOUNT_EXPERIMENTS):
         single_run()
 
 
