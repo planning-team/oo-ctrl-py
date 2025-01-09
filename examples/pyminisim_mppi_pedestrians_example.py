@@ -4,6 +4,8 @@
 import random
 import time
 import numpy as np
+import os
+import json
 import oo_ctrl as octrl
 import matplotlib.pyplot as plt
 
@@ -20,7 +22,7 @@ from pyminisim.visual import Renderer, CircleDrawing
 
 
 SEED = 42
-
+AMOUNT_EXPERIMENTS = 1000
 
 OBSTACLES = np.array([[1.5, 0., 0.8]])
 
@@ -115,8 +117,35 @@ def create_controller(horizon: int) -> octrl.np.MPPI:
         ]
     )
 
+def save_experiment(pedestrian_poses: np.ndarray, 
+                    robot_action: np.ndarray, 
+                    robot_goal:np.ndarray, 
+                    directory: str = "./dataset"):
+    if not os.path.exists(directory):
+        os.mkdir(directory)
+    files = os.listdir(directory)
+
+    if not files:
+        print("No files")
+        next_scenario = 1
+    else:
+        next_scenario = int(max([file.split('_')[1].split('.')[0] for file in files])) + 1
+
+    new_scene = {
+            "scene_id": next_scenario, 
+            "pedestrians": [
+                {"pose": pose.tolist()}
+                for pose in pedestrian_poses
+            ],
+            "robot": {
+                "goal": robot_goal.tolist(),
+                "action": robot_action
+            }
+        }
+    json.dump(new_scene, open(f"{directory}/scene_{next_scenario}.json", "w"),indent=4)
 
 def single_run():
+    actions = []
     ped_poses, ped_vels, ped_predictions = collect_pedestrian_trajectories()
     ped_predictions = ped_predictions.transpose((1, 0, 2))
     
@@ -140,6 +169,9 @@ def single_run():
         renderer.render()
         
         if np.linalg.norm(sim.current_state.world.robot.pose[:2] - goal) < 0.3:
+            save_experiment(pedestrian_poses=ped_predictions,
+                            robot_action=actions,
+                            robot_goal=goal)
             break
 
         if hold_time >= 0.1:
@@ -150,6 +182,7 @@ def single_run():
             u_pred, info = controller.step(x_current,
                                            {"goal": goal,
                                             "obstacles": ped_predictions[:, hold_iteration:(hold_iteration + horizon + 1), :2]})
+            actions.append(u_pred.tolist())
             hold_time = 0.
             hold_iteration += 1
             renderer.draw("ped_pred", CircleDrawing(ped_predictions[:, hold_iteration:(hold_iteration + horizon + 1), :2].reshape((-1, 2)),
