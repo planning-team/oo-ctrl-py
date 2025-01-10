@@ -129,7 +129,7 @@ def save_experiment(pedestrian_poses: np.ndarray,
         print("No files")
         next_scenario = 1
     else:
-        next_scenario = int(max([file.split('_')[1].split('.')[0] for file in files])) + 1
+        next_scenario = max([int(file.split('_')[1].split('.')[0]) for file in files]) + 1
 
     new_scene = {
             "scene_id": next_scenario, 
