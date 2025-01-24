@@ -5,10 +5,12 @@ from .core import (AbstractNumPyCost,
                    AbstractNumPyMPC)
 from .standard_costs import (EuclideanGoalCost,
                              EuclideanRatioGoalCost,
+                             EuclideanRatioGoalCombinedCost,
                              ControlCost,
                              EuclideanObstaclesCost,
                              Reduction,
-                             CollisionIndicatorCost)
-from .standard_models import UnicycleModel
+                             CollisionIndicatorCost,
+                             CollisionIndicatorCombinedCost)
+from .standard_models import UnicycleModel, UnicycleModelCombined
 from .cost_monitor import CostMonitor
 from .samplers import GaussianActionSampler

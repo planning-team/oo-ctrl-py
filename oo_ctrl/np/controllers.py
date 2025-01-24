@@ -20,7 +20,8 @@ class MPPI(AbstractNumPyMPC):
                              Union[Tuple[float, AbstractNumPyCost], AbstractNumPyCost]],
                  sampler: AbstractActionSampler,
                  biased: bool = False,
-                 cost_monitor: bool = False
+                 cost_monitor: bool = False,
+                 u_prev: np.ndarray = None
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
         assert isinstance(n_samples, int) and n_samples > 0, f"n_samples must be int > 0, got {n_samples}"
@@ -52,8 +53,9 @@ class MPPI(AbstractNumPyMPC):
         self._cost = cost
         self._sampler = sampler
         self._biased = biased
-        
-        self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
+        # TODO: Fix this constant after fixing model 
+        # self._u_prev = np.zeros((horizon, model.control_lb.shape[0])) 
+        self._u_prev = u_prev
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
         
@@ -70,7 +72,8 @@ class MPPI(AbstractNumPyMPC):
         u_eps = np.tile(self._u_prev, (self._n_samples, 1, 1)) + epsilon # (n_samples, horizon, dim)
         
         x_prev = np.tile(current_state, (self._n_samples, 1))
-        x_seq = [x_prev]
+        x_seq = []
+        x_seq.append(x_prev)
         for i in range(self._horizon):
             x_prev = self._model(x_prev, u_eps[:, i, :])
             x_seq.append(x_prev)

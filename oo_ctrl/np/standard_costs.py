@@ -268,3 +268,87 @@ class CollisionIndicatorCost(AbstractNumPyCost):
         
         reduced_cost = np.sum(collisions, axis=1)
         return self._Q * reduced_cost
+    
+class EuclideanRatioGoalCombinedCost(AbstractNumPyCost):
+
+    def __init__(self,
+                 Q: float,
+                 squared: bool,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = None,
+                 goal_key: str = "goal",
+                 name: str = "euclidean_ratio_goal_combined",
+                 mode: str = "mean"):
+        super(EuclideanRatioGoalCombinedCost, self).__init__(name=name)
+        self._Q = Q
+        self._squared = squared
+        self._state_dims = state_dims
+        self._goal_key = goal_key
+        self._mode = mode
+
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        x = extract_dims(state, self._state_dims)  # (n_samples, H, dim)
+        g = observation[self._goal_key][np.newaxis, np.newaxis, :]  # (1, 1, dim)
+        
+        dist_all = np.linalg.norm(x - g, axis=-1)  # (n_samples, H)
+        dist_initial = dist_all[:, 0, np.newaxis] # (n_samples, 1)
+        
+        ratio = dist_all / dist_initial  # (n_samples, H)
+        if ratio.shape[1] > 1:
+            ratio[:, 0] = 0.
+            
+        if self._squared:
+            ratio = ratio ** 2
+            
+        return self._Q * ratio
+    
+
+class CollisionIndicatorCombinedCost(AbstractNumPyCost):
+    
+    def __init__(self,
+                 Q: float,
+                 safe_distance: float,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = 2,
+                 obstacles_key: str = "obstacles",
+                 name: str = "collision_indicator_combined"):
+        super(CollisionIndicatorCombinedCost, self).__init__(name=name)
+        self._Q = Q
+        self._safe_distance = safe_distance
+        self._state_dims = state_dims
+        self._obstacles_key = obstacles_key
+    
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        # Extract robot state and pedestrian states
+        x = extract_dims(state, self._state_dims) # (n_samples, H, 24)
+        
+        # Reshape to separate robot and pedestrians
+        # Robot is first 3 coordinates, then 7 pedestrians with 3 coords each
+        robot_state = x[..., :3] # (n_samples, H, 3)
+        pedestrian_states = x[..., 3:].reshape(x.shape[0], x.shape[1], 7, 3) # (n_samples, H, 7, 3)
+        
+        # Compare robot with all pedestrians
+        robot_expanded = robot_state[..., np.newaxis, :] # (n_samples, H, 1, 3) 
+        robot_ped_diff = robot_expanded - pedestrian_states # (n_samples, H, 7, 3)
+        robot_ped_dist = np.linalg.norm(robot_ped_diff, axis=-1) # (n_samples, H, 7)
+        robot_collisions = (robot_ped_dist <= self._safe_distance) # (n_samples, H, 7)
+        
+        # Compare each pedestrian with all other pedestrians
+        ped_expanded_1 = pedestrian_states[..., np.newaxis, :] # (n_samples, H, 7, 1, 3)
+        ped_expanded_2 = pedestrian_states[..., np.newaxis, :, :] # (n_samples, H, 1, 7, 3)
+        ped_ped_diff = ped_expanded_1 - ped_expanded_2 # (n_samples, H, 7, 7, 3)
+        ped_ped_dist = np.linalg.norm(ped_ped_diff, axis=-1) # (n_samples, H, 7, 7)
+        
+        # Zero out diagonal since we don't want to count self-collisions
+        mask = ~np.eye(7, dtype=bool)
+        ped_ped_dist = ped_ped_dist * mask
+        
+        ped_collisions = (ped_ped_dist <= self._safe_distance) # (n_samples, H, 7, 7)
+        
+        # Sum up all collisions
+        total_collisions = np.sum(robot_collisions, axis=-1) + np.sum(ped_collisions, axis=(-2,-1))/2
+        return self._Q * total_collisions
