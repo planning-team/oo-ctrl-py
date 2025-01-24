@@ -21,7 +21,6 @@ class MPPI(AbstractNumPyMPC):
                  sampler: AbstractActionSampler,
                  biased: bool = False,
                  cost_monitor: bool = False,
-                 u_prev: np.ndarray = None
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
         assert isinstance(n_samples, int) and n_samples > 0, f"n_samples must be int > 0, got {n_samples}"
@@ -54,8 +53,7 @@ class MPPI(AbstractNumPyMPC):
         self._sampler = sampler
         self._biased = biased
         # TODO: Fix this constant after fixing model 
-        # self._u_prev = np.zeros((horizon, model.control_lb.shape[0])) 
-        self._u_prev = u_prev
+        self._u_prev = np.zeros((horizon, model.control_lb.shape[0])) 
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
         

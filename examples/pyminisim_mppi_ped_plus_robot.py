@@ -26,6 +26,7 @@ AMOUNT_EXPERIMENTS = 1000
 
 OBSTACLES = np.array([[1.5, 0., 0.8]])
 
+NUM_PEDESTRIANS = 1
 
 def create_sim(vis: bool,
                ped_states: Optional[Tuple[np.ndarray, np.ndarray]]) -> Tuple[Simulation, Renderer]:
@@ -35,7 +36,7 @@ def create_sim(vis: bool,
                                                                   max_dist=5.,
                                                                   return_type=PedestrianDetectorConfig.RETURN_ABSOLUTE))]
     if ped_states is None:
-        n_pedestrians = 7
+        n_pedestrians = NUM_PEDESTRIANS
         pedestrians = ORCAPedestriansModel(dt=0.01,
                                         waypoint_tracker=RandomWaypointTracker(world_size=(10, 10)),
                                         n_pedestrians=n_pedestrians,
@@ -93,20 +94,18 @@ def collect_pedestrian_trajectories_for_mppi():
     max_steps = 10 * 300
     hold_time = 0.01
     sim_dt=0.01
-    default_max_speed =  1.7
     all_poses = []
     all_velocities = []
     policy_steps_poses = []
-
-    n_pedestrians = 1
+ 
 
     waypoint_tracker=RandomWaypointTracker(world_size=(10, 10))
 
-    random_positions = waypoint_tracker.sample_independent_points(n_pedestrians, 0.5)
-    random_orientations = np.random.uniform(-np.pi, np.pi, size=n_pedestrians)
+    random_positions = waypoint_tracker.sample_independent_points(NUM_PEDESTRIANS, 0.5)
+    random_orientations = np.random.uniform(-np.pi, np.pi, size=NUM_PEDESTRIANS)
     
     initial_poses_pedestrians = np.hstack([random_positions, random_orientations.reshape(-1, 1)])
-    initial_velocities_pedestrians = np.zeros((n_pedestrians, 2))
+    initial_velocities_pedestrians = np.zeros((NUM_PEDESTRIANS, 2))
 
     initial_poses_robot = np.array([0., 0., 0.])
     initial_velocities_robot = np.array([0., 0.])
@@ -115,7 +114,7 @@ def collect_pedestrian_trajectories_for_mppi():
     initial_state_velocities = np.vstack([initial_velocities_robot[np.newaxis, ...], initial_velocities_pedestrians])
 
     if waypoint_tracker.state is None:
-            waypoint_tracker.resample_all({i: initial_poses_pedestrians[i] for i in range(n_pedestrians)})
+            waypoint_tracker.resample_all({i: initial_poses_pedestrians[i] for i in range(NUM_PEDESTRIANS)})
     all_poses.append(initial_state.reshape(-1))
     all_velocities.append(initial_state_velocities.reshape(-1))
 
@@ -142,7 +141,7 @@ def collect_pedestrian_trajectories_for_mppi():
                                                             "obstacles": current_poses[3:]})
             robot_actions.append(info['u_seq'][:,:2])
             robot_trajectory.append(info['x_seq'][1:,:3])
-            policy_steps_poses.append(info['x_seq'][1][3:].reshape(n_pedestrians,3))
+            policy_steps_poses.append(info['x_seq'][1][3:].reshape(NUM_PEDESTRIANS,3))
             all_velocities[-1] = u_pred
             hold_time = 0.
         
@@ -153,15 +152,15 @@ def collect_pedestrian_trajectories_for_mppi():
         
         
         hold_time += sim_dt
-        waypoint_tracker.update_waypoints({i: new_poses[3*(i+1):3*(i+1)+2] for i in range(n_pedestrians)})
+        waypoint_tracker.update_waypoints({i: new_poses[3*(i+1):3*(i+1)+2] for i in range(NUM_PEDESTRIANS)})
 
     all_poses = np.stack(all_poses, axis=0)
     all_velocities = np.stack(all_velocities, axis=0)
     policy_steps_poses = np.stack(policy_steps_poses, axis=0)
     robot_actions = np.stack(robot_actions, axis=0)
     robot_trajectory = np.stack(robot_trajectory, axis=0)
-    all_pedestrians_poses = all_poses[:,3:].reshape(max_steps,n_pedestrians,3)
-    all_pedestrians_velocities = np.zeros((max_steps,n_pedestrians,3))
+    all_pedestrians_poses = all_poses[:,3:].reshape(max_steps,NUM_PEDESTRIANS,3)
+    all_pedestrians_velocities = np.zeros((max_steps,NUM_PEDESTRIANS,3))
 
     return all_pedestrians_poses, all_pedestrians_velocities, policy_steps_poses, robot_actions, robot_trajectory
 
@@ -205,11 +204,18 @@ def create_controller(horizon: int) -> octrl.np.MPPI:
                                             safe_distance=0.65,
                                             name="CA")
         ],
-        u_prev=np.zeros((horizon, 2))
     )
 
 
 def create_controller_combined(horizon: int, n_samples: int) -> octrl.np.MPPI:
+    robot_stds = (2., 2.)
+    pedestrian_stds = (2.,2.) * NUM_PEDESTRIANS
+
+    robot_dims = (0, 1)  # Robot coordinates always first
+    pedestrian_dims = tuple(i for ped in range(NUM_PEDESTRIANS) 
+                            for i in (3 + ped * 3, 4 + ped * 3))
+    state_dims = robot_dims + pedestrian_dims
+
     return octrl.np.MPPI(
         horizon=horizon,
         n_samples=n_samples,
@@ -218,7 +224,7 @@ def create_controller_combined(horizon: int, n_samples: int) -> octrl.np.MPPI:
                                      linear_bounds=(0., 1.5),
                                      angular_bounds=(-np.pi / 2, np.pi / 2),
                                      force_clip=True,
-                                     n_pedestrians=1),
+                                     n_pedestrians=NUM_PEDESTRIANS),
         biased=False,
         cost_monitor=True,
         # sampler=octrl.np.GaussianActionSampler(stds=(2., 2., 2., 2., 2.,2., 
@@ -226,15 +232,15 @@ def create_controller_combined(horizon: int, n_samples: int) -> octrl.np.MPPI:
         #                                              2., 2., 2.,2)),
         # sampler=octrl.np.GaussianActionSampler(stds=(2., 2., 2., 2., 2.,2., 
         #                                              2., 2.)),
-        sampler=octrl.np.GaussianActionSampler(stds=(2., 2., 2., 2.)),
-        u_prev=np.zeros((horizon, 4)),
+        sampler=octrl.np.GaussianActionSampler(stds=robot_stds + pedestrian_stds),
+        # u_prev=np.zeros((horizon,2 + 2*NUM_PEDESTRIANS)),
         cost=[
             octrl.np.EuclideanRatioGoalCombinedCost(Q=12.,
                                             squared=False,
                                             # TODO: create function to get state dims depending on n_pedestrians
                                             # state_dims=(0,1,3,4,6,7,9,10,12,13,15,16,18,19,21,22),
                                             # state_dims=(0,1,3,4,6,7,9,10),
-                                            state_dims=(0,1,3,4),
+                                            state_dims=state_dims,
                                             name="goal",
                                             mode="mean"),
             # octrl.np.ControlCost(R_diag=(0.5, 0.1)),
@@ -291,7 +297,7 @@ def single_run():
 
     goal = np.array([3., -2.])
     horizon = 50
-    controller = create_controller(horizon=horizon)
+    # controller = create_controller(horizon=horizon)
     renderer.draw("goal", CircleDrawing(goal, 0.1, (255, 0, 0), 0))
 
     sim.step()  # First step can take some time due to Numba compilation
