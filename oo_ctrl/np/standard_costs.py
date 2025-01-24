@@ -167,6 +167,24 @@ class ControlCost(AbstractNumPyCost):
 
 
 class EuclideanObstaclesCost(AbstractNumPyCost):
+    """Cost function for avoiding obstacles based on Euclidean distance.
+
+    This class implements a cost function that penalizes being close to obstacles by computing
+    Euclidean distances between the system state and obstacle positions. The cost increases as
+    the system gets closer to obstacles.
+
+    Args:
+        Q (float): Weight coefficient for the cost
+        squared (bool): Whether to square the distances before applying reduction
+        reduction (Union[str, Reduction]): Method for reducing distances to multiple obstacles:
+            - "inverse_sum": 1 / sum(distances) - sensitive to being close to any obstacle
+            - "inverse_mean": 1 / mean(distances) - averages effect of all obstacles
+            - "sum_inverse": sum(1 / distances) - strongly penalizes being very close to any obstacle
+        state_dims (Optional[Union[int, Tuple[int, ...]]]): Which dimensions of state to use for distance calculation.
+            Defaults to 2 (e.g. x,y position)
+        obstacles_key (str): Key for accessing obstacles in the observation dictionary. Defaults to "obstacles"
+        name (str): Name of the cost component. Defaults to "euclidean_obstacles"
+    """
 
     def __init__(self,
                  Q: float,
