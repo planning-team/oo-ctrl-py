@@ -13,10 +13,6 @@ def wrap_angle(angle: float) -> float:
 def extract_dims(vector_array: np.ndarray, 
                  dims: Optional[Union[int, Tuple[int, ...]]]) -> np.ndarray:
     if dims is not None:
-        if isinstance(dims, int):
-            return vector_array[..., :dims]
-        else:
-            # TODO: Fix or remove this case for Numba
-            return vector_array[..., dims]
+        return vector_array[..., :dims]
     else:
         return vector_array

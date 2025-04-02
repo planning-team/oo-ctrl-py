@@ -52,13 +52,27 @@ def create_controller() -> octrl.np.MPPI:
         ]
     )
 
+def create_controller_nb() -> octrl.nb.MPPI:
+    return octrl.nb.MPPI(
+        horizon=25,
+        n_samples=3000,
+        stds=(0.7, np.pi / 2),
+        lmbda=10.,
+        model=octrl.nb.UnicycleModel(dt=0.1,
+                                     linear_bounds=(0., 1.5),
+                                     angular_bounds=(-np.pi / 4, np.pi / 4)),
+        cost=octrl.nb.EuclideanGoalCost(Q_diag=35.,
+                                   squared=True,
+                                   state_dims=2)
+    )
+
 
 def main():
     sim, renderer = create_sim()
     renderer.initialize()
 
     goal = np.array([3., -2.])
-    controller = create_controller()
+    controller = create_controller_nb()
     renderer.draw("goal", CircleDrawing(goal, 0.1, (255, 0, 0), 0))
 
     running = True

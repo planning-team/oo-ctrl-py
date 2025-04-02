@@ -78,3 +78,40 @@ def euclidean_cost_naive(states: np.ndarray,
                 cost_value = np.sqrt(cost_value)
             cost_values[i, j] = cost_value
     return cost_values
+
+
+def euclidean_ratio_cost_naive(states: np.ndarray,
+                         goal: np.ndarray,
+                         Q: np.ndarray,
+                         squared: bool) -> np.ndarray:
+    cost_values = np.zeros(states.shape[:2])
+    for i in range(states.shape[0]):
+        dist_initial = np.linalg.norm(states[i, 0] - goal, axis=-1)
+        for j in range(states.shape[1]):
+            if j == 0:
+                cost_value = 0.
+            else:
+                cost_value = np.linalg.norm(states[i, j] - goal, axis=-1) / dist_initial
+                if squared:
+                    cost_value = cost_value ** 2
+            cost_values[i, j] = Q * cost_value
+    return cost_values
+
+
+def collision_indicator_cost_naive(states: np.ndarray,
+                                   obstacles: np.ndarray,
+                                   Q: float,
+                                   safe_distance: float) -> np.ndarray:
+    cost_values = np.zeros(states.shape[:2])
+    for i in range(states.shape[0]):
+        for j in range(states.shape[1]):
+            for k in range(obstacles.shape[0]):
+                x = states[i, j]
+                if len(obstacles.shape) == 2:
+                    diff = (x - obstacles[k])
+                else:
+                    diff = (x - obstacles[k, j])
+                distances = np.linalg.norm(diff, axis=-1)
+                collisions = (distances <= safe_distance)
+                cost_values[i, j] += Q * collisions
+    return cost_values 

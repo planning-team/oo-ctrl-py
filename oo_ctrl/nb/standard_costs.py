@@ -1,7 +1,7 @@
 import numba.typed
 import numpy as np
 
-from typing import Tuple, Callable, Union, Optional, Dict, Any
+from typing import Tuple, Callable, Union, Optional, Dict, Any, List
 from numba import njit, prange
 from numba.typed import Dict as NumbaDict
 from oo_ctrl.nb.core import AbstractNumbaCost
@@ -93,5 +93,128 @@ class EuclideanGoalCost(AbstractNumbaCost):
                     result[i, j] = dist[0]
 
             return result
+        
+        return _fn
+
+
+class EuclideanRatioGoalCost(AbstractNumbaCost):
+
+    def __init__(self,
+                 Q: float,
+                 squared: bool,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = None,
+                 goal_key: str = "goal",
+                 name: str = "euclidean_ratio_goal"):
+        super(EuclideanRatioGoalCost, self).__init__(name=name)
+        self._Q = Q
+        self._squared = squared
+        self._state_dims = state_dims
+        self._goal_key = goal_key
+
+    def make(self) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+        squared = self._squared
+        state_dims = self._state_dims
+        goal_key = self._goal_key
+        Q = self._Q
+
+        @njit(parallel=True)
+        def _fn(state: np.ndarray, 
+                control: np.ndarray, 
+                observation: NumbaDict[str, np.ndarray]) -> np.ndarray:
+            x = extract_dims(state, state_dims)
+            g = observation[goal_key]
+            
+            n_samples = x.shape[0]
+            horizon = x.shape[1]
+            result = np.zeros((n_samples, horizon), dtype=state.dtype)
+            
+            for i in prange(n_samples):
+                dist_initial = np.linalg.norm(x[i, 0] - g)
+                for j in prange(horizon):
+                    if j == 0:
+                        value = 0.
+                    else:
+                        value = np.linalg.norm(x[i, j] - g) / dist_initial
+                        if squared:
+                            value = value ** 2
+                    result[i, j] = Q * value
+
+            return result
+        
+        return _fn
+
+
+class CollisionIndicatorCost(AbstractNumbaCost):
+    
+    def __init__(self,
+                 Q: float,
+                 safe_distance: float,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = 2,
+                 obstacles_key: str = "obstacles",
+                 name: str = "collision_indicator"):
+        super(CollisionIndicatorCost, self).__init__(name=name)
+        self._Q = Q
+        self._safe_distance = safe_distance
+        self._state_dims = state_dims
+        self._obstacles_key = obstacles_key
+    
+    def make(self) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+        state_dims = self._state_dims
+        Q = self._Q
+        safe_distance = self._safe_distance
+        obstacles_key = self._obstacles_key
+
+        @njit(parallel=True)
+        def _fn(state: np.ndarray, 
+                control: np.ndarray, 
+                observation: NumbaDict[str, np.ndarray]) -> np.ndarray:
+            obstacles = observation[obstacles_key]
+            x = extract_dims(state, state_dims)
+
+            n_samples = x.shape[0]
+            horizon = x.shape[1]
+            result = np.zeros((n_samples, horizon))
+
+            # static_obstacle = len(obstacles.shape) == 2
+
+            for i in prange(n_samples):
+                for j in prange(horizon):
+                    obstacles_cost = 0.
+                    for k in prange(obstacles.shape[0]):
+                        diff = x[i, j] - obstacles[k, j]
+                        # TODO: Doesn't work, looks like a Numba bug...
+                        # if static_obstacle:
+                        #     diff = x[i, j] - obstacles[k]
+                        # else:
+                        #     diff = x[i, j] - obstacles[k, j]
+                        dist = np.linalg.norm(diff)
+                        collisions = dist <= safe_distance
+                        obstacles_cost += Q * collisions
+                    result[i, j] = obstacles_cost
+        
+            return result
+        
+        return _fn
+
+
+class CompositeCost(AbstractNumbaCost):
+    
+    def __init__(self,
+                 cost_fns: List[AbstractNumbaCost],
+                 name: str = "composite_cost"):
+        super(CompositeCost, self).__init__(name=name)
+        self._cost_fns = cost_fns
+    
+    def make(self) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+        cost_fns = [f.make() for f in self._cost_fns]
+
+        @njit(parallel=True)
+        def _fn(state: np.ndarray, 
+                control: np.ndarray, 
+                observation: NumbaDict[str, np.ndarray]) -> np.ndarray:
+            total_cost = np.zeros((state.shape[0], state.shape[1]))
+            for i in prange(len(cost_fns)):
+                total_cost += cost_fns[i](state, control, observation)
+            return total_cost
         
         return _fn
