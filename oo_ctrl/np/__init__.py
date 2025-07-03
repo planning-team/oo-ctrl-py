@@ -11,4 +11,5 @@ from .standard_costs import (EuclideanGoalCost,
                              CollisionIndicatorCost)
 from .standard_models import UnicycleModel
 from .cost_monitor import CostMonitor
-from .samplers import GaussianActionSampler
+from .samplers import (GaussianActionSampler,
+                       NLNActionSampler)
