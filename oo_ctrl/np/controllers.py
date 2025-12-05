@@ -64,26 +64,35 @@ class MPPI(AbstractNumPyMPC):
     def step(self,
              current_state: np.ndarray,
              observation: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        # Nominal trajectory: previous solutions
+        u_nominal = np.tile(self._u_prev, (self._n_samples, 1, 1)) # (n_samples, horizon, dim)
+        
+        # Perturbation samples
         epsilon = self._sampler(n_samples=self._n_samples,
                                 horizon=self._horizon,
                                 observation=observation) # (n_samples, horizon, dim)
-        u_eps = np.tile(self._u_prev, (self._n_samples, 1, 1)) + epsilon # (n_samples, horizon, dim)
+
+        # Notation from the paper: v = u + eps
+        v_seq = u_nominal + epsilon # (n_samples, horizon, dim)
         
+        # Do rollout with perturbed control sequences
         x_prev = np.tile(current_state, (self._n_samples, 1))
-        x_seq = [x_prev]
+        x_seq = []
         for i in range(self._horizon):
-            x_prev = self._model(x_prev, u_eps[:, i, :])
+            x_prev = self._model(x_prev, v_seq[:, i, :])
             x_seq.append(x_prev)
-        x_seq = np.stack(x_seq, axis=1)
+        x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
         
-        s, _ = self._calculate_costs(x_seq, u_eps, observation) # (n_samples,)
+        # Calculate costs of the perturbed trajectories
+        # Final stage costs must be calculated inside the cost functions implementations
+        s, _ = self._calculate_costs(x_seq, v_seq, observation) # (n_samples,)
         
         if not self._biased:
             cov_inv = np.linalg.inv(self._sampler.covariance_matrix)
-            # TODO: Check if we need this line (it looks like theoretically properly,
-            # but in practice works worse)
-            # s = s + (self._lambda / 2.) * vec_mat_vec(u_eps, cov_inv, u_eps).sum(axis=1)
-            s = s + self._lambda * vec_mat_vec(u_eps, cov_inv, epsilon).sum(axis=1)
+            # In paper, this cost addition is quad-form of nominal control sequence,
+            # inverse covariance matrix and perturbations
+            # We account them by summing over horizon
+            s = s + self._lambda * vec_mat_vec(u_nominal, cov_inv, epsilon).sum(axis=1)
         
         beta = np.min(s)
         
@@ -99,7 +108,7 @@ class MPPI(AbstractNumPyMPC):
         self._u_prev[-1] = u[-1].copy()
     
         x_prev = current_state.copy()
-        x_seq = [x_prev]
+        x_seq = []
         for i in range(self._horizon):
             x_prev = self._model(x_prev, u[i, :])
             x_seq.append(x_prev)
