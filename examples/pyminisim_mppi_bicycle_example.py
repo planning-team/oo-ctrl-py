@@ -8,17 +8,20 @@ import oo_ctrl as octrl
 from typing import Tuple
 from pyminisim.core import Simulation
 from pyminisim.world_map import EmptyWorld
-from pyminisim.robot import UnicycleRobotModel
+from pyminisim.robot import BicycleRobotModel
 from pyminisim.sensors import LidarSensor, LidarSensorConfig, SemanticDetector, SemanticDetectorConfig
 from pyminisim.visual import Renderer, CircleDrawing
 
 
 OBSTACLES = np.array([[1.5, 0., 0.8]])
 
+WHEEL_BASE = 0.324
+
 
 def create_sim() -> Tuple[Simulation, Renderer]:
-    robot_model = UnicycleRobotModel(initial_pose=np.array([0., 0., 0.]),
-                                     initial_control=np.array([0., np.deg2rad(0.)]))
+    robot_model = BicycleRobotModel(wheel_base=WHEEL_BASE, 
+                                    initial_center_pose=np.array([0., 0., 0.]),
+                                    initial_control=np.array([0., np.deg2rad(0.)]))
     sensors = []
     sim = Simulation(sim_dt=0.01,
                      # world_map=CirclesWorld(circles=OBSTACLES),
@@ -38,18 +41,19 @@ def create_controller() -> octrl.np.MPPI:
     return octrl.np.MPPI(
         horizon=25,
         n_samples=3000,
-        lmbda=10.,
-        model=octrl.np.UnicycleModel(dt=0.1,
-                                     linear_bounds=(0., 1.5),
-                                     angular_bounds=(-np.pi / 4, np.pi / 4)),
+        lmbda=0.537,
+        model=octrl.np.BicycleModel(dt=0.1,
+                                    wheel_base=WHEEL_BASE,
+                                    linear_bounds=(0., 1.),
+                                    angular_bounds=(-np.deg2rad(30.), np.deg2rad(30.))),
         biased=False,
-        sampler=octrl.np.GaussianActionSampler(stds=(0.7, np.pi / 2)),
+        sampler=octrl.np.GaussianActionSampler(stds=(np.sqrt(0.05), np.sqrt(0.05))),
         cost=[
             octrl.np.EuclideanGoalCost(Q_diag=35.,
                                    squared=True,
-                                   state_dims=2),
-            octrl.np.ControlCost(R_diag=(5., 1.))
-        ]
+                                   state_dims=2)
+        ],
+        state_transform=octrl.np.RearToCenterTransform(WHEEL_BASE)
     )
 
 

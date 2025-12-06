@@ -4,7 +4,8 @@ from typing import List, Tuple, Union, Dict, Optional, Any
 from oo_ctrl.np.core import (AbstractNumPyMPC,
                              AbstractNumPyModel,
                              AbstractNumPyCost,
-                             AbstractActionSampler)
+                             AbstractActionSampler,
+                             AbstractStateTransform)
 from oo_ctrl.np.cost_monitor import CostMonitor
 from oo_ctrl.np.util import vec_mat_vec
 
@@ -20,6 +21,7 @@ class MPPI(AbstractNumPyMPC):
                              Union[Tuple[float, AbstractNumPyCost], AbstractNumPyCost]],
                  sampler: AbstractActionSampler,
                  biased: bool = False,
+                 state_transform: Optional[AbstractStateTransform] = None,
                  cost_monitor: bool = False
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
@@ -52,6 +54,7 @@ class MPPI(AbstractNumPyMPC):
         self._cost = cost
         self._sampler = sampler
         self._biased = biased
+        self._state_transform = state_transform
         
         self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
         
@@ -64,6 +67,10 @@ class MPPI(AbstractNumPyMPC):
     def step(self,
              current_state: np.ndarray,
              observation: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        # Transform state to the dynamics model space if needed
+        if self._state_transform is not None:
+            current_state = self._state_transform.inverse(current_state)
+
         # Nominal trajectory: previous solutions
         u_nominal = np.tile(self._u_prev, (self._n_samples, 1, 1)) # (n_samples, horizon, dim)
         
@@ -82,6 +89,10 @@ class MPPI(AbstractNumPyMPC):
             x_prev = self._model(x_prev, v_seq[:, i, :])
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
+
+        # Transform states for cost calculation if needed
+        if self._state_transform is not None:
+            x_seq = self._state_transform.forward(x_seq)
         
         # Calculate costs of the perturbed trajectories
         # Final stage costs must be calculated inside the cost functions implementations

@@ -125,3 +125,46 @@ class AbstractNumPyMPC(ABC):
              observation: Optional[Dict[str, Any]] = None,
              *args, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         pass
+
+
+class AbstractStateTransform(ABC):
+    """Base class for the state transformation.
+
+    This abstract class defines the interface for the state
+    transformations. They may be useful when, for example, dynamics state space
+    is not convenient for cost calculation. Example for such case is bicycle model,
+    where it is convenient to apply dynamics in rear axle center state space,
+    but goal-reaching and collision cost functions often operate with the vehicle's center.
+    """
+
+    @abstractmethod
+    def forward(self,
+                state: np.ndarray,
+                observation: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Forward transformation from the dynamic model's state space to
+        some target state space.
+
+        Args:
+            state: A set of states to transform of shape (..., source_state_dim)
+            observation (Optional[Dict[str, Any]]): Auxiliary observation dictionary
+
+        Returns:
+            np.ndarray: Transformed states of shape (..., target_state_dim)
+        """
+        pass
+
+    @abstractmethod
+    def inverse(self,
+                state: np.ndarray,
+                observation: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """Inverse transformation from the target state space to the initial
+        dynamic's state space
+
+        Args:
+            state: A set of states to transform of shape (..., target_state_dim)
+            observation (Optional[Dict[str, Any]]): Auxiliary observation dictionary
+
+        Returns:
+            np.ndarray: Transformed states of shape (..., source_state_dim)
+        """
+        pass
