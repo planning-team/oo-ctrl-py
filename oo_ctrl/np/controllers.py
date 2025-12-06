@@ -22,7 +22,9 @@ class MPPI(AbstractNumPyMPC):
                  sampler: AbstractActionSampler,
                  biased: bool = False,
                  state_transform: Optional[AbstractStateTransform] = None,
-                 cost_monitor: bool = False
+                 cost_monitor: bool = False,
+                 return_state_seq: bool = False,
+                 return_samples: bool = False
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
         assert isinstance(n_samples, int) and n_samples > 0, f"n_samples must be int > 0, got {n_samples}"
@@ -59,6 +61,8 @@ class MPPI(AbstractNumPyMPC):
         self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
+        self._return_state_seq = return_state_seq
+        self._return_samples = return_samples
         
     @property
     def cost_monitor(self) -> Optional[CostMonitor]:
@@ -67,6 +71,7 @@ class MPPI(AbstractNumPyMPC):
     def step(self,
              current_state: np.ndarray,
              observation: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
+        info = {}
         # Transform state to the dynamics model space if needed
         if self._state_transform is not None:
             current_state = self._state_transform.inverse(current_state)
@@ -86,13 +91,14 @@ class MPPI(AbstractNumPyMPC):
         x_prev = np.tile(current_state, (self._n_samples, 1))
         x_seq = []
         for i in range(self._horizon):
-            x_prev = self._model(x_prev, v_seq[:, i, :])
+            x_prev = self._model(x_prev, self._model.clip(v_seq[:, i, :]))
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
-
         # Transform states for cost calculation if needed
         if self._state_transform is not None:
             x_seq = self._state_transform.forward(x_seq)
+        if self._return_samples:
+            info["x_seq_samples"] = x_seq.copy()
         
         # Calculate costs of the perturbed trajectories
         # Final stage costs must be calculated inside the cost functions implementations
@@ -118,22 +124,21 @@ class MPPI(AbstractNumPyMPC):
         self._u_prev[:-1] = u[1:, :].copy()
         self._u_prev[-1] = u[-1].copy()
     
-        x_prev = current_state.copy()
-        x_seq = []
-        for i in range(self._horizon):
-            x_prev = self._model(x_prev, u[i, :])
-            x_seq.append(x_prev)
-        x_seq = np.stack(x_seq, axis=0)
-        if self._state_transform is not None:
-            x_seq = self._state_transform.forward(x_seq)
-        
-        info = {
-            "u_seq": u.copy(),
-            "x_seq": x_seq
-        }
-        
-        if self._cost_monitor:
-            self._log_result_cost(x_seq, u, observation)
+        info["u_seq"] = u.copy()
+
+        if self._return_state_seq or self._cost_monitor:
+            x_prev = current_state.copy()
+            x_seq = []
+            for i in range(self._horizon):
+                x_prev = self._model(x_prev, u[i, :])
+                x_seq.append(x_prev)
+            x_seq = np.stack(x_seq, axis=0)
+            if self._state_transform is not None:
+                x_seq = self._state_transform.forward(x_seq)
+
+            info["x_seq"] = x_seq
+            if self._cost_monitor:
+                self._log_result_cost(x_seq, u, observation)        
         
         return u[0], info
         

@@ -16,6 +16,7 @@ from pyminisim.visual import Renderer, CircleDrawing
 OBSTACLES = np.array([[1.5, 0., 0.8]])
 
 WHEEL_BASE = 0.324
+DT = 0.2
 
 
 def create_sim() -> Tuple[Simulation, Renderer]:
@@ -39,18 +40,21 @@ def create_sim() -> Tuple[Simulation, Renderer]:
 
 def create_controller() -> octrl.np.MPPI:
     return octrl.np.MPPI(
-        horizon=25,
-        n_samples=3000,
-        lmbda=0.537,
-        model=octrl.np.BicycleModel(dt=0.1,
+        horizon=16,
+        n_samples=2500,
+        lmbda=0.5,
+        model=octrl.np.BicycleModel(dt=DT,
                                     wheel_base=WHEEL_BASE,
-                                    linear_bounds=(0., 1.),
+                                    linear_bounds=(1., 1.),
                                     angular_bounds=(-np.deg2rad(30.), np.deg2rad(30.))),
         biased=False,
-        sampler=octrl.np.GaussianActionSampler(stds=(np.sqrt(0.05), np.sqrt(0.05))),
+        sampler=octrl.np.GaussianActionSampler(
+            stds=(np.sqrt(0.05),
+                  np.sqrt(0.05))
+        ),
         cost=[
             octrl.np.SE2C2CCost(threshold_distance=0.1,
-                    threshold_angle=np.deg2rad(10.),
+                    threshold_angle=np.deg2rad(20.),
                     weight_distance=1.5,
                     weight_angle=1.,
                     squared=False,
@@ -60,7 +64,9 @@ def create_controller() -> octrl.np.MPPI:
             #                        squared=True,
             #                        state_dims=2)
         ],
-        state_transform=octrl.np.RearToCenterTransform(WHEEL_BASE)
+        state_transform=octrl.np.RearToCenterTransform(WHEEL_BASE),
+        return_samples=True,
+        return_state_seq=True
     )
 
 
@@ -68,9 +74,8 @@ def main():
     sim, renderer = create_sim()
     renderer.initialize()
 
-    goal = np.array([3., -2., 0.])
+    goal = np.array([-2., 0., np.pi])
     controller = create_controller()
-    renderer.draw("goal", CircleDrawing(goal[:2], 0.1, (255, 0, 0), 0))
 
     running = True
     sim.step()  # First step can take some time due to Numba compilation
@@ -81,13 +86,16 @@ def main():
     while running:
         renderer.render()
 
-        if hold_time >= 0.1:
+        if hold_time >= DT:
 
             x_current = sim.current_state.world.robot.pose
             u_pred, info = controller.step(x_current,
                                            {"goal": goal})
             hold_time = 0.
-            renderer.draw("robot_traj", CircleDrawing(info["x_seq"][:, :2], 0.05, (252, 196, 98), 0))
+            if "x_seq_samples" in info:
+                renderer.draw("samples", CircleDrawing(info["x_seq_samples"][..., :2].reshape((-1, 2)), 0.03, (171, 226, 245), 0))
+            renderer.draw("robot_traj", CircleDrawing(info["x_seq"][:, :2], 0.05, (252, 196, 98, 0.5), 0))
+            renderer.draw("goal", CircleDrawing(goal[:2], 0.1, (255, 0, 0), 0))
 
         start_time = time.time()
         sim.step(u_pred)
