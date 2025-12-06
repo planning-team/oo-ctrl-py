@@ -124,6 +124,8 @@ class MPPI(AbstractNumPyMPC):
             x_prev = self._model(x_prev, u[i, :])
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=0)
+        if self._state_transform is not None:
+            x_seq = self._state_transform.forward(x_seq)
         
         info = {
             "u_seq": u.copy(),

@@ -9,7 +9,8 @@ from .standard_costs import (EuclideanGoalCost,
                              ControlCost,
                              EuclideanObstaclesCost,
                              Reduction,
-                             CollisionIndicatorCost)
+                             CollisionIndicatorCost,
+                             SE2C2CCost)
 from .standard_models import (UnicycleModel, 
                               BicycleModel, 
                               RearToCenterTransform)

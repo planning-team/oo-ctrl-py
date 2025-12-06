@@ -3,7 +3,7 @@ import numpy as np
 from typing import Union, Dict, Any, Tuple, Optional
 from enum import Enum
 from oo_ctrl.np.core import AbstractNumPyCost
-from oo_ctrl.np.util import extract_dims
+from oo_ctrl.np.util import extract_dims, wrap_angle
 
 
 class Reduction(Enum):
@@ -286,3 +286,67 @@ class CollisionIndicatorCost(AbstractNumPyCost):
         
         reduced_cost = np.sum(collisions, axis=1)
         return self._Q * reduced_cost
+
+
+class SE2C2CCost(AbstractNumPyCost):
+
+    ANGLE_ERROR_DIFFERENCE = "difference"
+    ANGLE_ERROR_COS_SIN = "cos_sin"
+
+    def __init__(self, 
+                 threshold_distance: float,
+                 threshold_angle: float,
+                 weight_distance: float,
+                 weight_angle: float,
+                 squared: bool,
+                 terminal_weight: float,
+                 angle_error: str = "difference",
+                 goal_key: str = "goal",
+                 name: str = "c2c_goal"):
+        assert angle_error in (SE2C2CCost.ANGLE_ERROR_DIFFERENCE,
+                               SE2C2CCost.ANGLE_ERROR_COS_SIN)
+        super(SE2C2CCost, self).__init__(name=name)
+        self._threshold_distance = threshold_distance
+        self._threshold_angle = threshold_angle
+        self._weight_distance = weight_distance
+        self._weight_angle = weight_angle
+        self._angle_error = angle_error
+        self._squared = squared
+        self._terminal_weight = terminal_weight
+        self._goal_key = goal_key
+
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        g = observation[self._goal_key] # (state_dim,)
+
+        metric_dists = np.linalg.norm(state[..., :2] - g[:2], axis=-1)
+        angle_dists = wrap_angle(state[..., 2] - g[2])
+        # Per-state flags
+        reach_mask = np.logical_and(
+            metric_dists <= self._threshold_distance,
+            angle_dists <= self._threshold_angle
+        ) # (n_samples, horizon)
+        # Make all states after goal reach as goal reached
+        reach_mask = np.cumsum(reach_mask, axis=1) > 1
+        # Invert mask to compute costs before goal reach
+        nonreach_mask = np.logical_not(reach_mask).astype(state.dtype)
+        reach_mask = reach_mask.astype(state.dtype)
+
+        if self._angle_error == SE2C2CCost.ANGLE_ERROR_DIFFERENCE:
+            angle_error_sqr = angle_dists ** 2
+        elif self._angle_error == SE2C2CCost.ANGLE_ERROR_COS_SIN:
+            angle_error_sqr = 2. * (1. - np.cos(state[..., 2] - g[2]))
+        dist_error_sqr = metric_dists ** 2
+
+        stage_costs = self._weight_distance * dist_error_sqr + \
+            self._weight_angle * angle_error_sqr
+        if not self._squared:
+            stage_costs = np.sqrt(stage_costs)
+        stage_costs = stage_costs * nonreach_mask
+
+        terminal_cost = self._terminal_weight * np.min(stage_costs, axis=1)
+        stage_costs[:, -1] = terminal_cost
+
+        return stage_costs

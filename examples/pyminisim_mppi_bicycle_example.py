@@ -49,9 +49,16 @@ def create_controller() -> octrl.np.MPPI:
         biased=False,
         sampler=octrl.np.GaussianActionSampler(stds=(np.sqrt(0.05), np.sqrt(0.05))),
         cost=[
-            octrl.np.EuclideanGoalCost(Q_diag=35.,
-                                   squared=True,
-                                   state_dims=2)
+            octrl.np.SE2C2CCost(threshold_distance=0.1,
+                    threshold_angle=np.deg2rad(10.),
+                    weight_distance=1.5,
+                    weight_angle=1.,
+                    squared=False,
+                    terminal_weight=20.,
+                    angle_error="cos_sin")
+            # octrl.np.EuclideanGoalCost(Q_diag=35.,
+            #                        squared=True,
+            #                        state_dims=2)
         ],
         state_transform=octrl.np.RearToCenterTransform(WHEEL_BASE)
     )
@@ -61,9 +68,9 @@ def main():
     sim, renderer = create_sim()
     renderer.initialize()
 
-    goal = np.array([3., -2.])
+    goal = np.array([3., -2., 0.])
     controller = create_controller()
-    renderer.draw("goal", CircleDrawing(goal, 0.1, (255, 0, 0), 0))
+    renderer.draw("goal", CircleDrawing(goal[:2], 0.1, (255, 0, 0), 0))
 
     running = True
     sim.step()  # First step can take some time due to Numba compilation
@@ -80,6 +87,7 @@ def main():
             u_pred, info = controller.step(x_current,
                                            {"goal": goal})
             hold_time = 0.
+            renderer.draw("robot_traj", CircleDrawing(info["x_seq"][:, :2], 0.05, (252, 196, 98), 0))
 
         start_time = time.time()
         sim.step(u_pred)
