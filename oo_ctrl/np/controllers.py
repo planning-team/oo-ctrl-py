@@ -5,7 +5,8 @@ from oo_ctrl.np.core import (AbstractNumPyMPC,
                              AbstractNumPyModel,
                              AbstractNumPyCost,
                              AbstractActionSampler,
-                             AbstractStateTransform)
+                             AbstractStateTransform,
+                             AbstractPresampler)
 from oo_ctrl.np.cost_monitor import CostMonitor
 from oo_ctrl.np.util import vec_mat_vec
 
@@ -22,9 +23,11 @@ class MPPI(AbstractNumPyMPC):
                  sampler: AbstractActionSampler,
                  biased: bool = False,
                  state_transform: Optional[AbstractStateTransform] = None,
+                 presampler: Optional[AbstractPresampler] = None,
                  cost_monitor: bool = False,
                  return_state_seq: bool = False,
-                 return_samples: bool = False
+                 return_samples: bool = False,
+                 return_pre_samples: bool = False
                  ):
         assert isinstance(horizon, int) and horizon > 0, f"horizon must be int > 0, got {horizon}"
         assert isinstance(n_samples, int) and n_samples > 0, f"n_samples must be int > 0, got {n_samples}"
@@ -57,12 +60,14 @@ class MPPI(AbstractNumPyMPC):
         self._sampler = sampler
         self._biased = biased
         self._state_transform = state_transform
+        self._presampler = presampler
         
         self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
         self._return_state_seq = return_state_seq
         self._return_samples = return_samples
+        self._return_pre_samples = return_pre_samples
         
     @property
     def cost_monitor(self) -> Optional[CostMonitor]:
@@ -76,8 +81,12 @@ class MPPI(AbstractNumPyMPC):
         if self._state_transform is not None:
             current_state = self._state_transform.inverse(current_state)
 
-        # Nominal trajectory: previous solutions
-        u_nominal = np.tile(self._u_prev, (self._n_samples, 1, 1)) # (n_samples, horizon, dim)
+        # Inint nominal trajectory
+        u_nominal, x_seq_pre_samples, x_seq_pre_samples_min = self._init_nominal(current_state, observation)
+        if self._return_pre_samples and x_seq_pre_samples is not None:
+            info["x_seq_pre_samples"] = x_seq_pre_samples
+            info["x_seq_pre_samples_min"] = x_seq_pre_samples_min
+        u_nominal = np.tile(u_nominal, (self._n_samples, 1, 1)) # (n_samples, horizon, dim)
         
         # Perturbation samples
         epsilon = self._sampler(n_samples=self._n_samples,
@@ -167,3 +176,33 @@ class MPPI(AbstractNumPyMPC):
                                                   observation)
         for k, v in values_horizon.items():
             self._cost_monitor.log_cost(k, v[0, :])
+
+    def _init_nominal(self,
+                      current_state: np.ndarray,
+                      observation: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, 
+                                                                             Optional[np.ndarray],
+                                                                             Optional[np.ndarray]]:
+        # No presampler - initi with previous solution
+        if self._presampler is None:
+            return self._u_prev, None, None
+
+        # Sample candidates
+        u_seq = self._presampler.sample(state=current_state, 
+                                        observation=observation) # (n_samples, horizon, dim)
+        # Add previous solution to the candidates
+        u_seq = np.concat((u_seq, self._u_prev[np.newaxis, :, :]), axis=0)
+        u_seq = self._model.clip(u_seq)
+
+        # Do rollout
+        x_prev = np.tile(current_state, (u_seq.shape[0], 1))
+        x_seq = []
+        for i in range(self._horizon):
+            x_prev = self._model(x_prev, u_seq[:, i, :])
+            x_seq.append(x_prev)
+        x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
+
+        s, _ = self._calculate_costs(x_seq, u_seq, observation) # (n_samples,)
+        min_idx = np.argmin(s)
+        u_nominal = u_seq[min_idx]
+
+        return u_nominal, x_seq, x_seq[min_idx]

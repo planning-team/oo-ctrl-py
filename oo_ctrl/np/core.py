@@ -168,3 +168,27 @@ class AbstractStateTransform(ABC):
             np.ndarray: Transformed states of shape (..., source_state_dim)
         """
         pass
+
+
+class AbstractPresampler(ABC):
+    """Base class for the pre-samping.
+
+    This abstract class defines the interface for the pre-samplers.
+    Their goal is to prepare initializing trajectories candidates
+    for controllers.
+    """
+
+    @abstractmethod
+    def sample(self,
+               state: np.ndarray,
+               observation: Optional[Dict[str, Any]] = None):
+        """Method for sampling initializing trajectories candidates.
+
+        Args:
+            state (np.ndarray): Current state of the system, shape: (state_dim,)
+            observation (Optional[Dict[str, Any]]): Auxiliary observation dictionary
+
+        Returns:
+            np.ndarray: Control trajectories, shape: (n_pre_samples, horizon, control_dim)
+        """
+        pass

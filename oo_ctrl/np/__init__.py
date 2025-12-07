@@ -3,7 +3,8 @@ from .core import (AbstractNumPyCost,
                    AbstractNumPyModel,
                    AbstractActionSampler,
                    AbstractNumPyMPC,
-                   AbstractStateTransform)
+                   AbstractStateTransform,
+                   AbstractPresampler)
 from .standard_costs import (EuclideanGoalCost,
                              EuclideanRatioGoalCost,
                              ControlCost,
@@ -16,3 +17,4 @@ from .standard_models import (UnicycleModel,
                               RearToCenterTransform)
 from .cost_monitor import CostMonitor
 from .samplers import GaussianActionSampler
+from .util import wrap_angle
