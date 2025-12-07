@@ -95,12 +95,13 @@ class MPPI(AbstractNumPyMPC):
 
         # Notation from the paper: v = u + eps
         v_seq = u_nominal + epsilon # (n_samples, horizon, dim)
+        v_seq = self._model.clip(v_seq)
         
         # Do rollout with perturbed control sequences
         x_prev = np.tile(current_state, (self._n_samples, 1))
         x_seq = []
         for i in range(self._horizon):
-            x_prev = self._model(x_prev, self._model.clip(v_seq[:, i, :]))
+            x_prev = self._model(x_prev, v_seq[:, i, :])
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
         # Transform states for cost calculation if needed
@@ -127,7 +128,7 @@ class MPPI(AbstractNumPyMPC):
         w = s_exp / eta # (n_samples,)
         
         delta_u = np.tensordot(w, epsilon, axes=(0, 0))
-        u = self._u_prev + delta_u
+        u = u_nominal[0] + delta_u
         u = self._model.clip(u)
         
         self._u_prev[:-1] = u[1:, :].copy()
@@ -200,6 +201,8 @@ class MPPI(AbstractNumPyMPC):
             x_prev = self._model(x_prev, u_seq[:, i, :])
             x_seq.append(x_prev)
         x_seq = np.stack(x_seq, axis=1) # (n_samples, horizon, dim)
+        if self._state_transform is not None:
+            x_seq = self._state_transform.forward(x_seq)
 
         s, _ = self._calculate_costs(x_seq, u_seq, observation) # (n_samples,)
         min_idx = np.argmin(s)
