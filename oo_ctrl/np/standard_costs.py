@@ -269,7 +269,11 @@ class CollisionIndicatorCost(AbstractNumPyCost):
                  state: np.ndarray,
                  control: np.ndarray,
                  observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        if self._obstacles_key not in observation:
+            return np.zeros((state.shape[0], state.shape[1]))
         obstacles = observation[self._obstacles_key] # (n_obstacles, H, dim)
+        if obstacles is None or obstacles.shape[0] == 0:
+            return np.zeros((state.shape[0], state.shape[1]))
         x = extract_dims(state, self._state_dims) # (n_samples, H, dim)
         
         # If obstacles don't have horizon dimension (static obstacles),
