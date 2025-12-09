@@ -354,3 +354,97 @@ class SE2C2CCost(AbstractNumPyCost):
         stage_costs[:, -1] = terminal_cost
 
         return stage_costs
+
+
+class FieldFunction(Enum):
+    EXPONENTIAL = "exponential"
+    LINEAR = "linear" 
+    QUADRATIC = "quadratic"
+
+
+class CollisionFieldCost(AbstractNumPyCost):
+    """Cost function that creates a repulsive field inside the collision zone.
+    
+    Unlike CollisionIndicatorCost which gives a binary penalty, this cost
+    provides a smooth gradient that increases as the agent gets closer to
+    obstacle centers. The cost is zero outside the safe_distance threshold
+    and follows a decay function inside.
+    
+    Args:
+        Q (float): Weight/scale coefficient for the cost (maximum cost at distance=0)
+        safe_distance (float): Distance threshold below which collision cost applies
+        decay_rate (float): Controls how quickly cost decays from center to boundary.
+            For exponential: cost at boundary = Q * exp(-decay_rate) ≈ 0.135*Q for decay_rate=2.0
+        field_function (Union[str, FieldFunction]): The decay function to use:
+            - "exponential": Q * exp(-decay_rate * d/safe_distance) - smooth with notable value at boundary
+            - "linear": Q * (1 - d/safe_distance) - linear decay, zero at boundary
+            - "quadratic": Q * (1 - d/safe_distance)^2 - quadratic decay, zero at boundary
+        state_dims (Optional[Union[int, Tuple[int, ...]]]): Which dimensions of state to use
+            for distance calculation. Defaults to 2 (x, y position)
+        obstacles_key (str): Key for accessing obstacles in observation dict
+        name (str): Name of the cost component
+    """
+    
+    def __init__(self,
+                 Q: float,
+                 safe_distance: float,
+                 decay_rate: float = 2.0,
+                 field_function: Union[str, FieldFunction] = FieldFunction.EXPONENTIAL,
+                 state_dims: Optional[Union[int, Tuple[int, ...]]] = 2,
+                 obstacles_key: str = "obstacles",
+                 name: str = "collision_field"):
+        super(CollisionFieldCost, self).__init__(name=name)
+        self._Q = Q
+        self._safe_distance = safe_distance
+        self._decay_rate = decay_rate
+        if isinstance(field_function, str):
+            field_function = FieldFunction(field_function)
+        self._field_function = field_function
+        self._state_dims = state_dims
+        self._obstacles_key = obstacles_key
+    
+    def __call__(self, 
+                 state: np.ndarray,
+                 control: np.ndarray,
+                 observation: Dict[str, Any]) -> Union[np.ndarray, float]:
+        if self._obstacles_key not in observation:
+            return np.zeros((state.shape[0], state.shape[1]))
+        obstacles = observation[self._obstacles_key]  # (n_obstacles, H, dim) or (n_obstacles, dim)
+        if obstacles is None or obstacles.shape[0] == 0:
+            return np.zeros((state.shape[0], state.shape[1]))
+        x = extract_dims(state, self._state_dims)  # (n_samples, H, dim)
+        
+        # If obstacles don't have horizon dimension (static obstacles),
+        # just copy them along the horizon
+        if len(obstacles.shape) == 2:
+            obstacles = np.stack([obstacles for _ in range(x.shape[1])], axis=1)
+        
+        x = x[:, np.newaxis, :, :]  # (n_samples, 1, H, dim)
+        obstacles = obstacles[np.newaxis, :, :, :]  # (1, n_obstacles, H, dim)
+        diff = x - obstacles
+        distances = np.linalg.norm(diff, axis=-1)  # (n_samples, n_obstacles, H)
+        
+        # Compute normalized distance (0 at center, 1 at boundary)
+        normalized_dist = distances / self._safe_distance
+        
+        # Apply field function
+        if self._field_function == FieldFunction.EXPONENTIAL:
+            # exp(-decay_rate * d/safe_distance): 1 at center, exp(-decay_rate) at boundary
+            field_values = np.exp(-self._decay_rate * normalized_dist)
+        elif self._field_function == FieldFunction.LINEAR:
+            # (1 - d/safe_distance): 1 at center, 0 at boundary
+            field_values = np.maximum(0.0, 1.0 - normalized_dist)
+        elif self._field_function == FieldFunction.QUADRATIC:
+            # (1 - d/safe_distance)^2: 1 at center, 0 at boundary
+            field_values = np.maximum(0.0, 1.0 - normalized_dist) ** 2
+        else:
+            raise ValueError(f"Unknown field function {self._field_function}")
+        
+        # Zero out cost outside collision zone
+        collision_mask = (distances <= self._safe_distance)
+        field_values = field_values * collision_mask
+        
+        # Sum over obstacles (aggregate collision field from all obstacles)
+        reduced_cost = np.sum(field_values, axis=1)  # (n_samples, H)
+        
+        return self._Q * reduced_cost

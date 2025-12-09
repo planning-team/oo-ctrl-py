@@ -11,10 +11,13 @@ from .standard_costs import (EuclideanGoalCost,
                              EuclideanObstaclesCost,
                              Reduction,
                              CollisionIndicatorCost,
-                             SE2C2CCost)
+                             SE2C2CCost,
+                             CollisionFieldCost,
+                             FieldFunction)
 from .standard_models import (UnicycleModel, 
                               BicycleModel, 
                               RearToCenterTransform)
 from .cost_monitor import CostMonitor
-from .samplers import GaussianActionSampler
+from .samplers import (GaussianActionSampler, 
+                       NLNActionSampler)
 from .util import wrap_angle

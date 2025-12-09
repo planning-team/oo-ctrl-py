@@ -35,3 +35,38 @@ class GaussianActionSampler(AbstractActionSampler):
             np.ndarray: Covariance matrix
         """
         return self._sigma.copy()
+
+
+class NLNActionSampler(AbstractActionSampler):
+
+    def __init__(self,
+                 stds: Tuple[float, ...]) -> None:
+        super(NLNActionSampler, self).__init__()
+        # Variance of the normal distribution
+        var_n = np.array(stds) ** 2
+        mu_n = np.zeros(len(stds))
+        # Mean and variance of the log-normal distribution
+        mu_ln = np.exp(0.5 * var_n)
+        var_ln = np.exp(var_n) * (np.exp(var_n) - 1.)
+        
+        var_nln = var_n * np.exp(2 * mu_ln + 2 * var_ln)
+
+        self._dim = len(stds)
+        self._mu_n = mu_n
+        self._std_n = np.sqrt(var_n)
+        self._mu_ln = mu_ln
+        self._std_ln = np.sqrt(var_ln)
+        self._covariance_matrix = np.diag(var_nln)
+
+    def __call__(self, 
+                 n_samples: int,
+                 horizon: int,
+                 observation: Optional[Dict[str, Any]]) -> np.ndarray:
+        samples_n = np.random.normal(self._mu_n, self._std_n, (n_samples, horizon, self._dim))
+        samples_ln = np.random.lognormal(self._mu_ln, self._std_ln, (n_samples, horizon, self._dim))
+        samples = samples_n * samples_ln
+        return samples
+
+    @property
+    def covariance_matrix(self) -> np.ndarray:
+        return self._covariance_matrix.copy()
