@@ -24,6 +24,7 @@ class MPPI(AbstractNumPyMPC):
                  biased: bool = False,
                  state_transform: Optional[AbstractStateTransform] = None,
                  presampler: Optional[AbstractPresampler] = None,
+                 u_init: Optional[np.ndarray] = None,
                  cost_monitor: bool = False,
                  return_state_seq: bool = False,
                  return_samples: bool = False,
@@ -62,7 +63,10 @@ class MPPI(AbstractNumPyMPC):
         self._state_transform = state_transform
         self._presampler = presampler
         
-        self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
+        if u_init is None:
+            self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
+        else:
+            self._u_prev = u_init.copy()
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
         self._return_state_seq = return_state_seq
