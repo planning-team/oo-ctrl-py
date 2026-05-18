@@ -13,6 +13,9 @@ from oo_ctrl.np.util import vec_mat_vec
 
 class MPPI(AbstractNumPyMPC):
     
+    _U_INIT_ZERO = "zeros"
+    _U_INIT_UNIFORM = "uniform"
+
     def __init__(self,
                  horizon: int,
                  n_samples: int,
@@ -24,7 +27,7 @@ class MPPI(AbstractNumPyMPC):
                  biased: bool = False,
                  state_transform: Optional[AbstractStateTransform] = None,
                  presampler: Optional[AbstractPresampler] = None,
-                 u_init: Optional[np.ndarray] = None,
+                 u_init: Union[str, np.ndarray] = "zeros",
                  cost_monitor: bool = False,
                  return_state_seq: bool = False,
                  return_samples: bool = False,
@@ -63,10 +66,11 @@ class MPPI(AbstractNumPyMPC):
         self._state_transform = state_transform
         self._presampler = presampler
         
-        if u_init is None:
-            self._u_prev = np.zeros((horizon, model.control_lb.shape[0]))
+        if isinstance(u_init, np.ndarray):
+            self._u_init = u_init.copy()
         else:
-            self._u_prev = u_init.copy()
+            self._u_init = u_init
+        self._u_prev = self._init_u_prev(self._u_init)
         
         self._cost_monitor = CostMonitor() if cost_monitor else None
         self._return_state_seq = return_state_seq
@@ -156,6 +160,10 @@ class MPPI(AbstractNumPyMPC):
         
         return u[0], info
         
+    def reset(self):
+        self._u_prev = self._init_u_prev(self._u_init)
+        self._cost_monitor = CostMonitor() if self._cost_monitor is not None else None
+
     def _calculate_costs(self,
                          x: np.ndarray,
                          u: np.ndarray,
@@ -213,3 +221,18 @@ class MPPI(AbstractNumPyMPC):
         u_nominal = u_seq[min_idx]
 
         return u_nominal, x_seq, x_seq[min_idx]
+
+    def _init_u_prev(self, u_init: Union[str, np.ndarray]) -> np.ndarray:
+        if u_init == MPPI._U_INIT_ZERO:
+            return np.zeros((self._horizon, self._model.control_lb.shape[0]))
+        elif u_init == MPPI._U_INIT_UNIFORM:
+            return np.random.uniform(
+                low=np.tile(self._model.control_lb, (self._horizon, 1)),
+                high=np.tile(self._model.control_ub, (self._horizon, 1))
+            )
+        else:
+            assert isinstance(u_init, np.ndarray),\
+                f"u_init must be np.ndarray or str, got {type(u_init)}"
+            assert u_init.shape == (self._horizon, self._model.control_lb.shape[0]),\
+                f"u_init must have shape (horizon, control_dim), got {u_init.shape}"
+            return u_init.copy()

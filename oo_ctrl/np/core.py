@@ -126,6 +126,9 @@ class AbstractNumPyMPC(ABC):
              *args, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         pass
 
+    def reset(self):
+        pass
+
 
 class AbstractStateTransform(ABC):
     """Base class for the state transformation.
